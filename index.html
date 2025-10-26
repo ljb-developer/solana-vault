@@ -4,9 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solana Vault Manager</title>
+    <!-- Add Anchor library BEFORE your vault.js -->
+    <script src="https://unpkg.com/@coral-xyz/anchor@0.28.0/dist/browser/index.iife.min.js"></script>
     <script src="https://unpkg.com/@solana/web3.js@1.87.6/lib/index.iife.js"></script>
     <script src="https://unpkg.com/@solana/wallet-adapter-phantom/lib/index.iife.js"></script>
-    <script src="https://unpkg.com/@coral-xyz/anchor@0.28.0"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -91,6 +92,17 @@
 </head>
 <body>
     <h1>Solana Vault Manager</h1>
+
+    <!-- Contract Addresses -->
+    <div class="container">
+        <h2>Contract Addresses</h2>
+        <div id="addressInfo" class="wallet-info">
+            <strong>Program ID (Smart Contract):</strong><br>
+            <code>HGtcTd7zoVzQZHsXtGF8oTvA5Hry786cKBxDP9M32yft</code><br><br>
+            <strong>Your Vault Address:</strong><br>
+            <code id="vaultAddress">Not connected</code>
+        </div>
+    </div>
 
     <!-- Wallet Connection -->
     <div class="container">
