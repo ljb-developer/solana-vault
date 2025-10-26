@@ -1,154 +1,424 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Solana Vault Manager</title>
-    <script src="https://unpkg.com/@solana/web3.js@1.87.6/lib/index.iife.js"></script>
-    <script src="https://unpkg.com/@solana/wallet-adapter-phantom/lib/index.iife.js"></script>
-    <script src="https://unpkg.com/@coral-xyz/anchor@0.28.0"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        button {
-            background: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            margin: 5px;
-        }
-        button:hover {
-            background: #0056b3;
-        }
-        button:disabled {
-            background: #6c757d;
-            cursor: not-allowed;
-        }
-        .wallet-info {
-            background: #e9ecef;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-        }
-        .vault-info {
-            background: #d4edda;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-        }
-        .error {
-            background: #f8d7da;
-            color: #721c24;
-            padding: 10px;
-            border-radius: 5px;
-            margin: 10px 0;
-        }
-        .success {
-            background: #d1edff;
-            color: #004085;
-            padding: 10px;
-            border-radius: 5px;
-            margin: 10px 0;
-        }
-        .log {
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
-            padding: 10px;
-            border-radius: 5px;
-            max-height: 200px;
-            overflow-y: auto;
-            font-family: monospace;
-            font-size: 12px;
-        }
-        input {
-            padding: 8px;
-            margin: 5px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            width: 300px;
-        }
-        .section {
-            margin: 20px 0;
-            padding: 15px;
-            border: 1px solid #dee2e6;
-            border-radius: 5px;
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Solana Vault (Anchor) – Minimal dApp</title>
+  <style>
+    :root{--bg:#0b0f14;--panel:#121821;--ink:#e6edf3;--muted:#8aa0b4;--accent:#7cc4ff;--danger:#ff7a7a}
+    html,body{background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif;margin:0}
+    header{padding:18px 16px;border-bottom:1px solid #1e2631;background:linear-gradient(180deg,#0e131a,#0b0f14)}
+    .wrap{max-width:980px;margin:0 auto;padding:16px}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    .card{background:var(--panel);border:1px solid #1e2631;border-radius:12px;padding:16px;margin:12px 0}
+    button,select,input,textarea{background:#0f1520;border:1px solid #2a3545;color:var(--ink);padding:10px 12px;border-radius:10px}
+    button{cursor:pointer}
+    button.primary{background:#0f1f33;border-color:#2d4666}
+    button.primary:hover{background:#0d1a29}
+    button.danger{border-color:#5a2a2a;background:#241113}
+    kbd,code{background:#0f1520;border:1px solid #283244;border-radius:6px;padding:2px 6px}
+    label{font-size:12px;color:var(--muted)}
+    h2{margin:0 0 8px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace}
+    .muted{color:var(--muted)}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:#0d141e;border:1px solid #253249;font-size:12px}
+    .ok{color:#9bf59b}
+    .err{color:var(--danger)}
+    .small{font-size:12px}
+    .hint{font-size:12px;color:var(--muted);margin-top:6px}
+    .hr{height:1px;background:#1e2631;margin:12px 0}
+    .foot{margin-top:18px;font-size:12px;color:var(--muted)}
+  </style>
 </head>
 <body>
-    <h1>Solana Vault Manager</h1>
-
-    <!-- Wallet Connection -->
-    <div class="container">
-        <h2>Wallet Connection</h2>
-        <div id="walletInfo" class="wallet-info">
-            Not connected
-        </div>
-        <button onclick="connectWallet()" id="connectBtn">Connect Phantom Wallet</button>
-        <button onclick="disconnectWallet()" id="disconnectBtn" style="display:none;">Disconnect</button>
+  <header>
+    <div class="wrap row" style="justify-content:space-between">
+      <div class="row" style="gap:10px">
+        <strong>Solana Vault (Anchor)</strong>
+        <span class="pill"><span>Program</span><code class="mono" id="program-id-short">…</code></span>
+      </div>
+      <div class="row" style="gap:8px">
+        <select id="cluster">
+          <option value="https://api.devnet.solana.com">Devnet</option>
+          <option value="https://api.testnet.solana.com">Testnet</option>
+          <option value="https://api.mainnet-beta.solana.com">Mainnet Beta</option>
+          <option value="http://localhost:8899">Localhost</option>
+        </select>
+        <button id="connect">Connect Wallet</button>
+      </div>
     </div>
+  </header>
 
-    <!-- Vault Information -->
-    <div class="container">
-        <h2>Vault Information</h2>
-        <button onclick="getVaultInfo()" id="infoBtn" disabled>Get Vault Info</button>
-        <button onclick="simulateGetVaultInfo()" id="simulateBtn" disabled>Simulate Get Info</button>
-        
-        <div id="vaultInfo" class="vault-info" style="display:none;">
-            <!-- Vault info will be displayed here -->
-        </div>
-    </div>
-
-    <!-- Initialize Vault -->
-    <div class="container">
-        <h2>Initialize Vault</h2>
+  <div class="wrap">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
         <div>
-            <input type="text" id="memberInput" placeholder="Enter member public key (optional)">
-            <button onclick="addMemberToInit()">Add Member</button>
+          <h2>Connection</h2>
+          <div class="small muted">Wallet: <span id="wallet">Not connected</span></div>
+          <div class="small muted">Vault PDA: <code id="vault-pda" class="mono">—</code></div>
+          <div class="small muted">Status: <span id="status" class="muted">Ready</span></div>
         </div>
-        <div id="initMembers"></div>
-        <button onclick="initializeVault()" id="initBtn" disabled>Initialize Vault</button>
+        <div class="small muted">If you need SOL on Devnet, use <a href="https://faucet.solana.com/" target="_blank">faucet</a>.</div>
+      </div>
     </div>
 
-    <!-- Manage Members -->
-    <div class="container">
-        <h2>Manage Members</h2>
-        <input type="text" id="newMember" placeholder="Enter new member public key">
-        <button onclick="addMember()" id="addMemberBtn" disabled>Add Member</button>
-        
-        <input type="text" id="removeMember" placeholder="Enter member public key to remove">
-        <button onclick="removeMember()" id="removeMemberBtn" disabled>Remove Member</button>
-    </div>
+    <div class="grid">
+      <div class="card">
+        <h2>Initialize Vault</h2>
+        <label>Initial members (comma-separated pubkeys)</label><br />
+        <textarea id="init-members" rows="3" placeholder="Eg: 7xs…abc, 8Nd…xyz" style="width:100%"></textarea>
+        <div class="hint">The vault PDA is derived with seeds <code>["vault", owner]</code> where owner is your wallet public key.</div>
+        <div class="row" style="margin-top:10px"><button class="primary" id="btn-init">Initialize</button></div>
+        <div class="small" id="init-msg"></div>
+      </div>
 
-    <!-- Withdraw SOL -->
-    <div class="container">
+      <div class="card">
+        <h2>Add Member</h2>
+        <label>New member pubkey</label><br />
+        <input id="add-member" placeholder="Enter Pubkey" style="width:100%" />
+        <div class="row" style="margin-top:10px"><button class="primary" id="btn-add">Add</button></div>
+        <div class="small" id="add-msg"></div>
+      </div>
+
+      <div class="card">
+        <h2>Remove Member</h2>
+        <label>Member pubkey</label><br />
+        <input id="remove-member" placeholder="Enter Pubkey" style="width:100%" />
+        <div class="row" style="margin-top:10px"><button class="danger" id="btn-remove">Remove</button></div>
+        <div class="small" id="remove-msg"></div>
+      </div>
+
+      <div class="card">
         <h2>Withdraw SOL</h2>
-        <input type="text" id="recipient" placeholder="Recipient public key">
-        <input type="number" id="amount" placeholder="Amount in lamports" value="1000000">
-        <button onclick="withdrawSol()" id="withdrawBtn" disabled>Withdraw SOL</button>
+        <label>Recipient pubkey</label><br />
+        <input id="withdraw-recipient" placeholder="Enter Pubkey" style="width:100%" />
+        <div style="height:8px"></div>
+        <label>Amount (lamports)</label><br />
+        <input id="withdraw-amount" type="number" min="0" step="1" value="0" style="width:100%" />
+        <div class="row" style="margin-top:10px"><button class="primary" id="btn-withdraw">Withdraw</button></div>
+        <div class="small" id="withdraw-msg"></div>
+      </div>
+
+      <div class="card" style="grid-column:1/-1">
+        <h2>Read: Vault Account</h2>
+        <div class="row" style="gap:8px">
+          <button id="btn-refresh">Refresh</button>
+        </div>
+        <div class="hr"></div>
+        <div class="small">Owner: <code id="owner" class="mono">—</code></div>
+        <div class="small">Bump: <code id="bump" class="mono">—</code></div>
+        <div class="small">Members (<span id="members-count">0</span>):</div>
+        <ul id="members" class="small"></ul>
+        <div class="hr"></div>
+        <div class="small muted">Tip: You can also call the <code class="mono">get_vault_info</code> RPC (which prints logs), but reading the account is more useful in a UI.</div>
+      </div>
     </div>
 
-    <!-- Logs -->
-    <div class="container">
-        <h2>Logs</h2>
-        <button onclick="clearLogs()">Clear Logs</button>
-        <div id="logs" class="log"></div>
+    <div class="foot">
+      Uses <code>@solana/web3.js</code> and <code>@coral-xyz/anchor</code> from CDNs. No build tools needed.
     </div>
+  </div>
 
-    <script src="vault.js"></script>
+  <!-- CDN: Solana + Anchor (browser builds) -->
+  <script src="https://unpkg.com/@solana/web3.js@1.95.1/lib/index.iife.min.js"></script>
+  <script src="https://unpkg.com/@coral-xyz/anchor@0.29.0/dist/browser.js"></script>
+
+  <script>
+    // === Program constants ===
+    const PROGRAM_ID = new solanaWeb3.PublicKey("HGtcTd7zoVzQZHsXtGF8oTvA5Hry786cKBxDP9M32yft");
+    document.getElementById('program-id-short').textContent = PROGRAM_ID.toBase58().slice(0,4)+"…"+PROGRAM_ID.toBase58().slice(-4);
+
+    // Minimal IDL distilled from your Rust program
+    const IDL = {
+      version: "0.1.0",
+      name: "solana_vault",
+      address: PROGRAM_ID.toBase58(),
+      instructions: [
+        {
+          name: "initializeVault",
+          accounts: [
+            {name:"vault", isMut:true, isSigner:false},
+            {name:"payer", isMut:true, isSigner:true},
+            {name:"systemProgram", isMut:false, isSigner:false}
+          ],
+          args: [ {name:"initialMembers", type:{vec:"publicKey"}} ]
+        },
+        {
+          name: "addMember",
+          accounts: [
+            {name:"vault", isMut:true, isSigner:false},
+            {name:"signer", isMut:false, isSigner:true}
+          ],
+          args: [ {name:"newMember", type:"publicKey"} ]
+        },
+        {
+          name: "removeMember",
+          accounts: [
+            {name:"vault", isMut:true, isSigner:false},
+            {name:"signer", isMut:false, isSigner:true}
+          ],
+          args: [ {name:"member", type:"publicKey"} ]
+        },
+        {
+          name: "withdrawSol",
+          accounts: [
+            {name:"vault", isMut:true, isSigner:false},
+            {name:"recipient", isMut:true, isSigner:false},
+            {name:"signer", isMut:false, isSigner:true},
+            {name:"systemProgram", isMut:false, isSigner:false}
+          ],
+          args: [ {name:"amount", type:"u64"} ]
+        },
+        {
+          name: "getVaultInfo",
+          accounts: [ {name:"vault", isMut:false, isSigner:false} ],
+          args: []
+        }
+      ],
+      accounts: [
+        {
+          name: "vault",
+          type: {
+            kind: "struct",
+            fields: [
+              {name:"owner", type:"publicKey"},
+              {name:"members", type:{vec:"publicKey"}},
+              {name:"bump", type:"u8"}
+            ]
+          }
+        }
+      ]
+    };
+
+    // Global state
+    let provider, program, connection, walletPubkey;
+
+    const $ = (id) => document.getElementById(id);
+    const setStatus = (msg, cls="muted") => { const el=$('status'); el.textContent = msg; el.className = cls; };
+
+    function getConnection() {
+      const url = $('cluster').value;
+      return new solanaWeb3.Connection(url, { commitment: 'confirmed' });
+    }
+
+    async function getProvider() {
+      const anyWindow = window; // Phantom etc.
+      if (!anyWindow.solana || !anyWindow.solana.isPhantom) {
+        throw new Error('Phantom wallet not found. Install it to continue.');
+      }
+      const network = $('cluster').value;
+      connection = new solanaWeb3.Connection(network, { commitment: 'confirmed' });
+      const wallet = anyWindow.solana;
+      await wallet.connect();
+      walletPubkey = wallet.publicKey;
+      $('wallet').textContent = walletPubkey.toBase58();
+
+      const anchorProvider = new anchor.AnchorProvider(connection, wallet, { preflightCommitment: 'confirmed' });
+      anchor.setProvider(anchorProvider);
+      provider = anchorProvider;
+      program = new anchor.Program(IDL, PROGRAM_ID, provider);
+
+      await computeAndShowVaultPDA();
+      setStatus('Wallet connected', 'ok');
+    }
+
+    async function computeAndShowVaultPDA(ownerPk) {
+      const owner = ownerPk || walletPubkey;
+      if (!owner) return;
+      const [pda] = solanaWeb3.PublicKey.findProgramAddressSync([
+        Buffer.from('vault'),
+        owner.toBuffer()
+      ], PROGRAM_ID);
+      $('vault-pda').textContent = pda.toBase58();
+      return pda;
+    }
+
+    // === RPC helpers ===
+    function parseMembersCSV(text){
+      if(!text) return [];
+      return text.split(',').map(s=>s.trim()).filter(Boolean).map(s=>new solanaWeb3.PublicKey(s));
+    }
+
+    async function initializeVault(){
+      try{
+        setStatus('Initializing vault…');
+        const members = parseMembersCSV($('init-members').value);
+        const payer = walletPubkey;
+        const [vaultPda, bump] = solanaWeb3.PublicKey.findProgramAddressSync([
+          Buffer.from('vault'),
+          payer.toBuffer()
+        ], PROGRAM_ID);
+
+        const txSig = await program.methods
+          .initializeVault(members)
+          .accounts({
+            vault: vaultPda,
+            payer,
+            systemProgram: solanaWeb3.SystemProgram.programId
+          })
+          .rpc();
+
+        $('init-msg').innerHTML = `✅ Initialized. <br/>Tx: <code class="mono">${txSig}</code>`;
+        await computeAndShowVaultPDA(payer);
+        await refreshVault();
+        setStatus('Vault initialized ✅', 'ok');
+      }catch(err){
+        console.error(err);
+        $('init-msg').innerHTML = `<span class="err">${err.message||err}</span>`;
+        setStatus('Init failed', 'err');
+      }
+    }
+
+    async function addMember(){
+      try{
+        setStatus('Adding member…');
+        const owner = walletPubkey; // PDA seed is owner
+        const [vaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([
+          Buffer.from('vault'), owner.toBuffer()
+        ], PROGRAM_ID);
+        const newMember = new solanaWeb3.PublicKey($('add-member').value.trim());
+        const txSig = await program.methods
+          .addMember(newMember)
+          .accounts({ vault: vaultPda, signer: owner })
+          .rpc();
+        $('add-msg').innerHTML = `✅ Member added. Tx: <code class="mono">${txSig}</code>`;
+        await refreshVault();
+        setStatus('Member added ✅', 'ok');
+      }catch(err){
+        console.error(err);
+        $('add-msg').innerHTML = `<span class="err">${err.message||err}</span>`;
+        setStatus('Add failed', 'err');
+      }
+    }
+
+    async function removeMember(){
+      try{
+        setStatus('Removing member…');
+        const owner = walletPubkey;
+        const [vaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([
+          Buffer.from('vault'), owner.toBuffer()
+        ], PROGRAM_ID);
+        const member = new solanaWeb3.PublicKey($('remove-member').value.trim());
+        const txSig = await program.methods
+          .removeMember(member)
+          .accounts({ vault: vaultPda, signer: owner })
+          .rpc();
+        $('remove-msg').innerHTML = `✅ Member removed. Tx: <code class="mono">${txSig}</code>`;
+        await refreshVault();
+        setStatus('Member removed ✅', 'ok');
+      }catch(err){
+        console.error(err);
+        $('remove-msg').innerHTML = `<span class="err">${err.message||err}</span>`;
+        setStatus('Remove failed', 'err');
+      }
+    }
+
+    async function withdrawSol(){
+      try{
+        setStatus('Withdrawing…');
+        const owner = walletPubkey;
+        const [vaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([
+          Buffer.from('vault'), owner.toBuffer()
+        ], PROGRAM_ID);
+        const recipient = new solanaWeb3.PublicKey($('withdraw-recipient').value.trim());
+        const amount = BigInt($('withdraw-amount').value || '0');
+        const txSig = await program.methods
+          .withdrawSol(amount)
+          .accounts({
+            vault: vaultPda,
+            recipient,
+            signer: owner,
+            systemProgram: solanaWeb3.SystemProgram.programId
+          })
+          .rpc();
+        $('withdraw-msg').innerHTML = `✅ Withdrawn. Tx: <code class="mono">${txSig}</code>`;
+        setStatus('Withdraw sent ✅', 'ok');
+      }catch(err){
+        console.error(err);
+        $('withdraw-msg').innerHTML = `<span class="err">${err.message||err}</span>`;
+        setStatus('Withdraw failed', 'err');
+      }
+    }
+
+    async function callGetVaultInfo(){
+      // This RPC only prints program logs. We still include it for completeness.
+      try{
+        const owner = walletPubkey;
+        const [vaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([
+          Buffer.from('vault'), owner.toBuffer()
+        ], PROGRAM_ID);
+        setStatus('Calling get_vault_info…');
+        const txSig = await program.methods
+          .getVaultInfo()
+          .accounts({ vault: vaultPda })
+          .rpc();
+        setStatus('get_vault_info invoked ✅', 'ok');
+        console.log('get_vault_info tx:', txSig);
+      }catch(err){
+        console.error(err);
+        setStatus('get_vault_info failed', 'err');
+      }
+    }
+
+    async function refreshVault(){
+      try{
+        const owner = walletPubkey;
+        if(!owner){ $('owner').textContent='—'; $('members').innerHTML=''; $('members-count').textContent='0'; return; }
+        const [vaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([
+          Buffer.from('vault'), owner.toBuffer()
+        ], PROGRAM_ID);
+        $('vault-pda').textContent = vaultPda.toBase58();
+        const acct = await program.account.vault.fetchNullable(vaultPda);
+        if(!acct){
+          $('owner').textContent = 'Not initialized';
+          $('bump').textContent = '—';
+          $('members').innerHTML = '';
+          $('members-count').textContent = '0';
+          setStatus('No vault found for this owner (initialize first).');
+          return;
+        }
+        $('owner').textContent = acct.owner.toBase58();
+        $('bump').textContent = String(acct.bump);
+        $('members').innerHTML = '';
+        acct.members.forEach(pk=>{
+          const li=document.createElement('li');
+          li.textContent = pk.toBase58();
+          $('members').appendChild(li);
+        });
+        $('members-count').textContent = String(acct.members.length);
+        setStatus('Vault loaded ✅', 'ok');
+      }catch(err){
+        console.error(err);
+        setStatus('Read failed', 'err');
+      }
+    }
+
+    // === Wire up UI ===
+    $('connect').addEventListener('click', async ()=>{
+      try { await getProvider(); } catch(e){ alert(e.message||e); }
+    });
+    $('cluster').addEventListener('change', async ()=>{
+      if(provider){ await getProvider(); await refreshVault(); }
+    });
+    $('btn-init').addEventListener('click', initializeVault);
+    $('btn-add').addEventListener('click', addMember);
+    $('btn-remove').addEventListener('click', removeMember);
+    $('btn-withdraw').addEventListener('click', withdrawSol);
+    $('btn-refresh').addEventListener('click', refreshVault);
+
+    // Auto-connect if Phantom is already authorized
+    window.addEventListener('load', async () => {
+      try{
+        if(window.solana && window.solana.isPhantom){
+          await window.solana.connect({ onlyIfTrusted: true });
+          if(window.solana.publicKey){
+            await getProvider();
+            await refreshVault();
+          }
+        }
+      }catch(e){ console.debug('Autoconnect skipped'); }
+    });
+  </script>
 </body>
 </html>
