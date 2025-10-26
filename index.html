@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Solana Vault (Anchor) – Minimal dApp</title>
+  <title>Solana Vault (Anchor) – Minimal dApp (Single File)</title>
   <style>
     :root{--bg:#0b0f14;--panel:#121821;--ink:#e6edf3;--muted:#8aa0b4;--accent:#7cc4ff;--danger:#ff7a7a}
     html,body{background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif;margin:0}
@@ -116,309 +116,161 @@
     </div>
 
     <div class="foot">
-      Uses <code>@solana/web3.js</code> and <code>@coral-xyz/anchor</code> from CDNs. No build tools needed.
+      Single-file build with the fix for <code>anchor is not defined</code>.
     </div>
   </div>
 
-  <!-- CDN: Solana + Anchor (browser builds) -->
+  <!-- CDN: Solana + Anchor (browser builds). Must load BEFORE our inline script. -->
   <script src="https://unpkg.com/@solana/web3.js@1.95.1/lib/index.iife.min.js"></script>
   <script src="https://unpkg.com/@coral-xyz/anchor@0.29.0/dist/browser.js"></script>
 
+  <!-- App code -->
   <script>
-    // === Program constants ===
-    const PROGRAM_ID = new solanaWeb3.PublicKey("HGtcTd7zoVzQZHsXtGF8oTvA5Hry786cKBxDP9M32yft");
-    document.getElementById('program-id-short').textContent = PROGRAM_ID.toBase58().slice(0,4)+"…"+PROGRAM_ID.toBase58().slice(-4);
+    // ===== Fix: wait until window.anchor and window.solanaWeb3 are available =====
+    const waitFor = (fn, timeout=10000) => new Promise((resolve, reject)=>{
+      const start = Date.now();
+      (function loop(){
+        try{ if(fn()) return resolve(); }catch(e){}
+        if(Date.now()-start>timeout) return reject(new Error('Anchor library did not load in time.'));
+        requestAnimationFrame(loop);
+      })();
+    });
 
-    // Minimal IDL distilled from your Rust program
-    const IDL = {
-      version: "0.1.0",
-      name: "solana_vault",
-      address: PROGRAM_ID.toBase58(),
-      instructions: [
-        {
-          name: "initializeVault",
-          accounts: [
-            {name:"vault", isMut:true, isSigner:false},
-            {name:"payer", isMut:true, isSigner:true},
-            {name:"systemProgram", isMut:false, isSigner:false}
-          ],
-          args: [ {name:"initialMembers", type:{vec:"publicKey"}} ]
-        },
-        {
-          name: "addMember",
-          accounts: [
-            {name:"vault", isMut:true, isSigner:false},
-            {name:"signer", isMut:false, isSigner:true}
-          ],
-          args: [ {name:"newMember", type:"publicKey"} ]
-        },
-        {
-          name: "removeMember",
-          accounts: [
-            {name:"vault", isMut:true, isSigner:false},
-            {name:"signer", isMut:false, isSigner:true}
-          ],
-          args: [ {name:"member", type:"publicKey"} ]
-        },
-        {
-          name: "withdrawSol",
-          accounts: [
-            {name:"vault", isMut:true, isSigner:false},
-            {name:"recipient", isMut:true, isSigner:false},
-            {name:"signer", isMut:false, isSigner:true},
-            {name:"systemProgram", isMut:false, isSigner:false}
-          ],
-          args: [ {name:"amount", type:"u64"} ]
-        },
-        {
-          name: "getVaultInfo",
-          accounts: [ {name:"vault", isMut:false, isSigner:false} ],
-          args: []
-        }
-      ],
-      accounts: [
-        {
-          name: "vault",
-          type: {
-            kind: "struct",
-            fields: [
-              {name:"owner", type:"publicKey"},
-              {name:"members", type:{vec:"publicKey"}},
-              {name:"bump", type:"u8"}
-            ]
-          }
-        }
-      ]
-    };
+    (async function boot(){
+      await waitFor(()=>window.solanaWeb3 && window.anchor);
+      const solanaWeb3 = window.solanaWeb3;
+      const anchor = window.anchor;
 
-    // Global state
-    let provider, program, connection, walletPubkey;
+      // === Program constants ===
+      const PROGRAM_ID = new solanaWeb3.PublicKey('HGtcTd7zoVzQZHsXtGF8oTvA5Hry786cKBxDP9M32yft');
+      document.getElementById('program-id-short').textContent = PROGRAM_ID.toBase58().slice(0,4)+'…'+PROGRAM_ID.toBase58().slice(-4);
 
-    const $ = (id) => document.getElementById(id);
-    const setStatus = (msg, cls="muted") => { const el=$('status'); el.textContent = msg; el.className = cls; };
+      const IDL = {
+        version:'0.1.0', name:'solana_vault', address: PROGRAM_ID.toBase58(),
+        instructions:[
+          {name:'initializeVault', accounts:[{name:'vault',isMut:true,isSigner:false},{name:'payer',isMut:true,isSigner:true},{name:'systemProgram',isMut:false,isSigner:false}], args:[{name:'initialMembers',type:{vec:'publicKey'}}]},
+          {name:'addMember', accounts:[{name:'vault',isMut:true,isSigner:false},{name:'signer',isMut:false,isSigner:true}], args:[{name:'newMember',type:'publicKey'}]},
+          {name:'removeMember', accounts:[{name:'vault',isMut:true,isSigner:false},{name:'signer',isMut:false,isSigner:true}], args:[{name:'member',type:'publicKey'}]},
+          {name:'withdrawSol', accounts:[{name:'vault',isMut:true,isSigner:false},{name:'recipient',isMut:true,isSigner:false},{name:'signer',isMut:false,isSigner:true},{name:'systemProgram',isMut:false,isSigner:false}], args:[{name:'amount',type:'u64'}]},
+          {name:'getVaultInfo', accounts:[{name:'vault',isMut:false,isSigner:false}], args:[]}
+        ],
+        accounts:[{name:'vault', type:{kind:'struct', fields:[{name:'owner',type:'publicKey'},{name:'members',type:{vec:'publicKey'}},{name:'bump',type:'u8'}]}}]
+      };
 
-    function getConnection() {
-      const url = $('cluster').value;
-      return new solanaWeb3.Connection(url, { commitment: 'confirmed' });
-    }
+      // Global state
+      let provider, program, connection, walletPubkey;
+      const $ = (id) => document.getElementById(id);
+      const setStatus = (msg, cls='muted') => { const el=$('status'); el.textContent = msg; el.className = cls; };
 
-    async function getProvider() {
-      const anyWindow = window; // Phantom etc.
-      if (!anyWindow.solana || !anyWindow.solana.isPhantom) {
-        throw new Error('Phantom wallet not found. Install it to continue.');
+      function getConnection(){
+        const url = $('cluster').value;
+        return new solanaWeb3.Connection(url, { commitment:'confirmed' });
       }
-      const network = $('cluster').value;
-      connection = new solanaWeb3.Connection(network, { commitment: 'confirmed' });
-      const wallet = anyWindow.solana;
-      await wallet.connect();
-      walletPubkey = wallet.publicKey;
-      $('wallet').textContent = walletPubkey.toBase58();
 
-      const anchorProvider = new anchor.AnchorProvider(connection, wallet, { preflightCommitment: 'confirmed' });
-      anchor.setProvider(anchorProvider);
-      provider = anchorProvider;
-      program = new anchor.Program(IDL, PROGRAM_ID, provider);
+      async function getProvider(){
+        const anyWindow = window; // Phantom etc.
+        if(!anyWindow.solana || !anyWindow.solana.isPhantom){ throw new Error('Phantom wallet not found. Install it to continue.'); }
+        const network = $('cluster').value;
+        connection = new solanaWeb3.Connection(network, { commitment:'confirmed' });
+        const wallet = anyWindow.solana;
+        await wallet.connect();
+        walletPubkey = wallet.publicKey;
+        $('wallet').textContent = walletPubkey.toBase58();
 
-      await computeAndShowVaultPDA();
-      setStatus('Wallet connected', 'ok');
-    }
+        const anchorProvider = new anchor.AnchorProvider(connection, wallet, { preflightCommitment:'confirmed' });
+        anchor.setProvider(anchorProvider);
+        provider = anchorProvider;
+        program = new anchor.Program(IDL, PROGRAM_ID, provider);
 
-    async function computeAndShowVaultPDA(ownerPk) {
-      const owner = ownerPk || walletPubkey;
-      if (!owner) return;
-      const [pda] = solanaWeb3.PublicKey.findProgramAddressSync([
-        Buffer.from('vault'),
-        owner.toBuffer()
-      ], PROGRAM_ID);
-      $('vault-pda').textContent = pda.toBase58();
-      return pda;
-    }
-
-    // === RPC helpers ===
-    function parseMembersCSV(text){
-      if(!text) return [];
-      return text.split(',').map(s=>s.trim()).filter(Boolean).map(s=>new solanaWeb3.PublicKey(s));
-    }
-
-    async function initializeVault(){
-      try{
-        setStatus('Initializing vault…');
-        const members = parseMembersCSV($('init-members').value);
-        const payer = walletPubkey;
-        const [vaultPda, bump] = solanaWeb3.PublicKey.findProgramAddressSync([
-          Buffer.from('vault'),
-          payer.toBuffer()
-        ], PROGRAM_ID);
-
-        const txSig = await program.methods
-          .initializeVault(members)
-          .accounts({
-            vault: vaultPda,
-            payer,
-            systemProgram: solanaWeb3.SystemProgram.programId
-          })
-          .rpc();
-
-        $('init-msg').innerHTML = `✅ Initialized. <br/>Tx: <code class="mono">${txSig}</code>`;
-        await computeAndShowVaultPDA(payer);
-        await refreshVault();
-        setStatus('Vault initialized ✅', 'ok');
-      }catch(err){
-        console.error(err);
-        $('init-msg').innerHTML = `<span class="err">${err.message||err}</span>`;
-        setStatus('Init failed', 'err');
+        await computeAndShowVaultPDA();
+        setStatus('Wallet connected', 'ok');
       }
-    }
 
-    async function addMember(){
-      try{
-        setStatus('Adding member…');
-        const owner = walletPubkey; // PDA seed is owner
-        const [vaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([
-          Buffer.from('vault'), owner.toBuffer()
-        ], PROGRAM_ID);
-        const newMember = new solanaWeb3.PublicKey($('add-member').value.trim());
-        const txSig = await program.methods
-          .addMember(newMember)
-          .accounts({ vault: vaultPda, signer: owner })
-          .rpc();
-        $('add-msg').innerHTML = `✅ Member added. Tx: <code class="mono">${txSig}</code>`;
-        await refreshVault();
-        setStatus('Member added ✅', 'ok');
-      }catch(err){
-        console.error(err);
-        $('add-msg').innerHTML = `<span class="err">${err.message||err}</span>`;
-        setStatus('Add failed', 'err');
+      async function computeAndShowVaultPDA(ownerPk){
+        const owner = ownerPk || walletPubkey; if(!owner) return;
+        const [pda] = solanaWeb3.PublicKey.findProgramAddressSync([Buffer.from('vault'), owner.toBuffer()], PROGRAM_ID);
+        $('vault-pda').textContent = pda.toBase58();
+        return pda;
       }
-    }
 
-    async function removeMember(){
-      try{
-        setStatus('Removing member…');
-        const owner = walletPubkey;
-        const [vaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([
-          Buffer.from('vault'), owner.toBuffer()
-        ], PROGRAM_ID);
-        const member = new solanaWeb3.PublicKey($('remove-member').value.trim());
-        const txSig = await program.methods
-          .removeMember(member)
-          .accounts({ vault: vaultPda, signer: owner })
-          .rpc();
-        $('remove-msg').innerHTML = `✅ Member removed. Tx: <code class="mono">${txSig}</code>`;
-        await refreshVault();
-        setStatus('Member removed ✅', 'ok');
-      }catch(err){
-        console.error(err);
-        $('remove-msg').innerHTML = `<span class="err">${err.message||err}</span>`;
-        setStatus('Remove failed', 'err');
+      function parseMembersCSV(text){ return (text||'').split(',').map(s=>s.trim()).filter(Boolean).map(s=>new solanaWeb3.PublicKey(s)); }
+
+      async function initializeVault(){
+        try{
+          setStatus('Initializing vault…');
+          const members = parseMembersCSV($('init-members').value);
+          const payer = walletPubkey;
+          const [vaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([Buffer.from('vault'), payer.toBuffer()], PROGRAM_ID);
+          const txSig = await program.methods.initializeVault(members).accounts({ vault:vaultPda, payer, systemProgram: solanaWeb3.SystemProgram.programId }).rpc();
+          $('init-msg').innerHTML = `✅ Initialized. <br/>Tx: <code class="mono">${txSig}</code>`;
+          await computeAndShowVaultPDA(payer); await refreshVault(); setStatus('Vault initialized ✅','ok');
+        }catch(err){ console.error(err); $('init-msg').innerHTML = `<span class="err">${err.message||err}</span>`; setStatus('Init failed','err'); }
       }
-    }
 
-    async function withdrawSol(){
-      try{
-        setStatus('Withdrawing…');
-        const owner = walletPubkey;
-        const [vaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([
-          Buffer.from('vault'), owner.toBuffer()
-        ], PROGRAM_ID);
-        const recipient = new solanaWeb3.PublicKey($('withdraw-recipient').value.trim());
-        const amount = BigInt($('withdraw-amount').value || '0');
-        const txSig = await program.methods
-          .withdrawSol(amount)
-          .accounts({
-            vault: vaultPda,
-            recipient,
-            signer: owner,
-            systemProgram: solanaWeb3.SystemProgram.programId
-          })
-          .rpc();
-        $('withdraw-msg').innerHTML = `✅ Withdrawn. Tx: <code class="mono">${txSig}</code>`;
-        setStatus('Withdraw sent ✅', 'ok');
-      }catch(err){
-        console.error(err);
-        $('withdraw-msg').innerHTML = `<span class="err">${err.message||err}</span>`;
-        setStatus('Withdraw failed', 'err');
+      async function addMember(){
+        try{
+          setStatus('Adding member…');
+          const owner = walletPubkey;
+          const [vaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([Buffer.from('vault'), owner.toBuffer()], PROGRAM_ID);
+          const newMember = new solanaWeb3.PublicKey($('add-member').value.trim());
+          const txSig = await program.methods.addMember(newMember).accounts({ vault:vaultPda, signer: owner }).rpc();
+          $('add-msg').innerHTML = `✅ Member added. Tx: <code class="mono">${txSig}</code>`; await refreshVault(); setStatus('Member added ✅','ok');
+        }catch(err){ console.error(err); $('add-msg').innerHTML = `<span class="err">${err.message||err}</span>`; setStatus('Add failed','err'); }
       }
-    }
 
-    async function callGetVaultInfo(){
-      // This RPC only prints program logs. We still include it for completeness.
-      try{
-        const owner = walletPubkey;
-        const [vaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([
-          Buffer.from('vault'), owner.toBuffer()
-        ], PROGRAM_ID);
-        setStatus('Calling get_vault_info…');
-        const txSig = await program.methods
-          .getVaultInfo()
-          .accounts({ vault: vaultPda })
-          .rpc();
-        setStatus('get_vault_info invoked ✅', 'ok');
-        console.log('get_vault_info tx:', txSig);
-      }catch(err){
-        console.error(err);
-        setStatus('get_vault_info failed', 'err');
+      async function removeMember(){
+        try{
+          setStatus('Removing member…');
+          const owner = walletPubkey;
+          const [vaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([Buffer.from('vault'), owner.toBuffer()], PROGRAM_ID);
+          const member = new solanaWeb3.PublicKey($('remove-member').value.trim());
+          const txSig = await program.methods.removeMember(member).accounts({ vault:vaultPda, signer: owner }).rpc();
+          $('remove-msg').innerHTML = `✅ Member removed. Tx: <code class="mono">${txSig}</code>`; await refreshVault(); setStatus('Member removed ✅','ok');
+        }catch(err){ console.error(err); $('remove-msg').innerHTML = `<span class="err">${err.message||err}</span>`; setStatus('Remove failed','err'); }
       }
-    }
 
-    async function refreshVault(){
-      try{
-        const owner = walletPubkey;
-        if(!owner){ $('owner').textContent='—'; $('members').innerHTML=''; $('members-count').textContent='0'; return; }
-        const [vaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([
-          Buffer.from('vault'), owner.toBuffer()
-        ], PROGRAM_ID);
-        $('vault-pda').textContent = vaultPda.toBase58();
-        const acct = await program.account.vault.fetchNullable(vaultPda);
-        if(!acct){
-          $('owner').textContent = 'Not initialized';
-          $('bump').textContent = '—';
+      async function withdrawSol(){
+        try{
+          setStatus('Withdrawing…');
+          const owner = walletPubkey;
+          const [vaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([Buffer.from('vault'), owner.toBuffer()], PROGRAM_ID);
+          const recipient = new solanaWeb3.PublicKey($('withdraw-recipient').value.trim());
+          const amount = BigInt($('withdraw-amount').value||'0');
+          const txSig = await program.methods.withdrawSol(amount).accounts({ vault:vaultPda, recipient, signer: owner, systemProgram: solanaWeb3.SystemProgram.programId }).rpc();
+          $('withdraw-msg').innerHTML = `✅ Withdrawn. Tx: <code class="mono">${txSig}</code>`; setStatus('Withdraw sent ✅','ok');
+        }catch(err){ console.error(err); $('withdraw-msg').innerHTML = `<span class="err">${err.message||err}</span>`; setStatus('Withdraw failed','err'); }
+      }
+
+      async function refreshVault(){
+        try{
+          const owner = walletPubkey; if(!owner){ $('owner').textContent='—'; $('members').innerHTML=''; $('members-count').textContent='0'; return; }
+          const [vaultPda] = solanaWeb3.PublicKey.findProgramAddressSync([Buffer.from('vault'), owner.toBuffer()], PROGRAM_ID);
+          $('vault-pda').textContent = vaultPda.toBase58();
+          const acct = await program.account.vault.fetchNullable(vaultPda);
+          if(!acct){ $('owner').textContent='Not initialized'; $('bump').textContent='—'; $('members').innerHTML=''; $('members-count').textContent='0'; setStatus('No vault found for this owner (initialize first).'); return; }
+          $('owner').textContent = acct.owner.toBase58();
+          $('bump').textContent = String(acct.bump);
           $('members').innerHTML = '';
-          $('members-count').textContent = '0';
-          setStatus('No vault found for this owner (initialize first).');
-          return;
-        }
-        $('owner').textContent = acct.owner.toBase58();
-        $('bump').textContent = String(acct.bump);
-        $('members').innerHTML = '';
-        acct.members.forEach(pk=>{
-          const li=document.createElement('li');
-          li.textContent = pk.toBase58();
-          $('members').appendChild(li);
-        });
-        $('members-count').textContent = String(acct.members.length);
-        setStatus('Vault loaded ✅', 'ok');
-      }catch(err){
-        console.error(err);
-        setStatus('Read failed', 'err');
+          acct.members.forEach(pk=>{ const li=document.createElement('li'); li.textContent = pk.toBase58(); $('members').appendChild(li); });
+          $('members-count').textContent = String(acct.members.length);
+          setStatus('Vault loaded ✅','ok');
+        }catch(err){ console.error(err); setStatus('Read failed','err'); }
       }
-    }
 
-    // === Wire up UI ===
-    $('connect').addEventListener('click', async ()=>{
-      try { await getProvider(); } catch(e){ alert(e.message||e); }
-    });
-    $('cluster').addEventListener('change', async ()=>{
-      if(provider){ await getProvider(); await refreshVault(); }
-    });
-    $('btn-init').addEventListener('click', initializeVault);
-    $('btn-add').addEventListener('click', addMember);
-    $('btn-remove').addEventListener('click', removeMember);
-    $('btn-withdraw').addEventListener('click', withdrawSol);
-    $('btn-refresh').addEventListener('click', refreshVault);
+      // Wire up
+      $('connect').addEventListener('click', async ()=>{ try{ await getProvider(); }catch(e){ alert(e.message||e); } });
+      $('cluster').addEventListener('change', async ()=>{ if(provider){ await getProvider(); await refreshVault(); } });
+      $('btn-init').addEventListener('click', initializeVault);
+      $('btn-add').addEventListener('click', addMember);
+      $('btn-remove').addEventListener('click', removeMember);
+      $('btn-withdraw').addEventListener('click', withdrawSol);
+      $('btn-refresh').addEventListener('click', refreshVault);
 
-    // Auto-connect if Phantom is already authorized
-    window.addEventListener('load', async () => {
-      try{
-        if(window.solana && window.solana.isPhantom){
-          await window.solana.connect({ onlyIfTrusted: true });
-          if(window.solana.publicKey){
-            await getProvider();
-            await refreshVault();
-          }
-        }
-      }catch(e){ console.debug('Autoconnect skipped'); }
-    });
+      // Auto-connect if Phantom already trusted
+      window.addEventListener('load', async () => {
+        try{ if(window.solana && window.solana.isPhantom){ await window.solana.connect({ onlyIfTrusted:true }); if(window.solana.publicKey){ await getProvider(); await refreshVault(); } } } catch(e){}
+      });
+    })();
   </script>
 </body>
 </html>
