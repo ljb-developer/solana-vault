@@ -57,10 +57,10 @@ $("cluster").addEventListener("change", async () => {
 
 // ===== PDA =====
 function deriveVaultPDA(ownerPk) {
-  return solanaWeb3.PublicKey.findProgramAddressSync(
-    [Buffer.from("vault"), ownerPk.toBuffer()],
-    PROGRAM_ID
-  )[0];
+  const encoder = new TextEncoder();
+  const seed1 = encoder.encode("vault");
+  const seed2 = ownerPk.toBytes();
+  return solanaWeb3.PublicKey.findProgramAddressSync([seed1, seed2], PROGRAM_ID)[0];
 }
 
 async function computeAndShowVaultPDA() {
