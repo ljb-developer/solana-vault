@@ -7,8 +7,6 @@ let initMembers = [];
 
 // Program configuration
 const PROGRAM_ID = new solanaWeb3.PublicKey("HGtcTd7zoVzQZHsXtGF8oTvA5Hry786cKBxDP9M32yft");
-
-// Simple IDL - minimal version
 const IDL = {
     "version": "0.1.0",
     "name": "solana_vault",
@@ -76,15 +74,21 @@ const IDL = {
                 ]
             }
         }
+    ],
+    "errors": [
+        {
+            "code": 6000,
+            "name": "unauthorized",
+            "msg": "You are not authorized to perform this action"
+        }
     ]
 };
 
-// Connect to wallet - SIMPLIFIED VERSION
+// Connect to wallet
 async function connectWallet() {
     try {
-        // Check if Phantom is installed
         if (!window.solana || !window.solana.isPhantom) {
-            throw new Error('Phantom wallet not found! Please install Phantom wallet.');
+            throw new Error('Phantom wallet not found!');
         }
 
         wallet = window.solana;
@@ -93,42 +97,19 @@ async function connectWallet() {
         await wallet.connect();
         addLog('Wallet connected: ' + wallet.publicKey.toString());
         
-        // Setup connection
+        // Setup provider and program
         const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('devnet'), 'confirmed');
-        
-        // Check if Anchor is available
-        if (typeof anchor === 'undefined') {
-            throw new Error('Anchor library not loaded. Please refresh the page.');
-        }
-        
-        // Create provider
-        provider = new anchor.AnchorProvider(connection, wallet, { 
-            commitment: 'confirmed',
-            preflightCommitment: 'confirmed'
-        });
-        
-        // Set provider
+        provider = new anchor.AnchorProvider(connection, wallet, { commitment: 'confirmed' });
         anchor.setProvider(provider);
-        
-        // Create program
         program = new anchor.Program(IDL, PROGRAM_ID, provider);
         
         // Update UI
         document.getElementById('walletInfo').innerHTML = `
             Connected: ${wallet.publicKey.toString()}<br>
-            Network: Devnet<br>
-            Balance: Loading...
+            Network: Devnet
         `;
         document.getElementById('connectBtn').style.display = 'none';
         document.getElementById('disconnectBtn').style.display = 'inline-block';
-        
-        // Get balance
-        const balance = await connection.getBalance(wallet.publicKey);
-        document.getElementById('walletInfo').innerHTML = `
-            Connected: ${wallet.publicKey.toString()}<br>
-            Network: Devnet<br>
-            Balance: ${balance / solanaWeb3.LAMPORTS_PER_SOL} SOL
-        `;
         
         // Enable buttons
         document.getElementById('infoBtn').disabled = false;
@@ -143,59 +124,39 @@ async function connectWallet() {
         
     } catch (error) {
         showError('Failed to connect wallet: ' + error.message);
-        console.error('Connection error:', error);
     }
 }
 
 // Disconnect wallet
 function disconnectWallet() {
-    if (wallet && wallet.disconnect) {
-        wallet.disconnect();
-    }
+    wallet.disconnect();
     document.getElementById('walletInfo').innerHTML = 'Not connected';
     document.getElementById('connectBtn').style.display = 'inline-block';
     document.getElementById('disconnectBtn').style.display = 'none';
     document.getElementById('vaultInfo').style.display = 'none';
-    document.getElementById('vaultAddress').textContent = 'Not connected';
     
     // Disable buttons
-    const buttons = ['infoBtn', 'simulateBtn', 'initBtn', 'addMemberBtn', 'removeMemberBtn', 'withdrawBtn'];
-    buttons.forEach(btnId => {
-        document.getElementById(btnId).disabled = true;
-    });
+    document.getElementById('infoBtn').disabled = true;
+    document.getElementById('simulateBtn').disabled = true;
+    document.getElementById('initBtn').disabled = true;
+    document.getElementById('addMemberBtn').disabled = true;
+    document.getElementById('removeMemberBtn').disabled = true;
+    document.getElementById('withdrawBtn').disabled = true;
     
     addLog('Wallet disconnected');
-    
-    // Reset state
-    provider = null;
-    program = null;
-    wallet = null;
-    vaultPda = null;
 }
 
 // Find Vault PDA
 async function findVaultPDA() {
     try {
-        const [pda] = solanaWeb3.PublicKey.findProgramAddressSync(
+        const [pda] = await solanaWeb3.PublicKey.findProgramAddress(
             [Buffer.from('vault'), wallet.publicKey.toBuffer()],
             PROGRAM_ID
         );
         vaultPda = pda;
-        addLog('Vault PDA: ' + vaultPda.toString());
-        document.getElementById('vaultAddress').textContent = vaultPda.toString();
-        
-        // Check if vault exists
-        const vaultInfo = await program.provider.connection.getAccountInfo(vaultPda);
-        if (vaultInfo) {
-            addLog('✓ Vault exists on-chain');
-            document.getElementById('initBtn').disabled = true;
-        } else {
-            addLog('✗ Vault not found - click Initialize to create it');
-            document.getElementById('initBtn').disabled = false;
-        }
-        
+        addLog('Vault PDA found: ' + vaultPda.toString());
     } catch (error) {
-        addLog('Error finding vault: ' + error.message);
+        addLog('Vault PDA not found for current wallet');
     }
 }
 
@@ -206,13 +167,7 @@ async function getVaultInfo() {
             throw new Error('Wallet not connected or vault not found');
         }
 
-        addLog('Fetching vault info from: ' + vaultPda.toString());
-        
-        // Check if vault exists first
-        const vaultAccountInfo = await program.provider.connection.getAccountInfo(vaultPda);
-        if (!vaultAccountInfo) {
-            throw new Error('Vault not initialized. Please initialize first.');
-        }
+        addLog('Fetching vault info...');
         
         // Fetch vault account
         const vaultAccount = await program.account.vault.fetch(vaultPda);
@@ -221,27 +176,51 @@ async function getVaultInfo() {
         vaultInfoDiv.style.display = 'block';
         vaultInfoDiv.innerHTML = `
             <h3>Vault Details</h3>
-            <strong>Vault Address:</strong> ${vaultPda.toString()}<br>
             <strong>Owner:</strong> ${vaultAccount.owner.toString()}<br>
             <strong>Bump:</strong> ${vaultAccount.bump}<br>
-            <strong>Balance:</strong> ${vaultAccountInfo.lamports / solanaWeb3.LAMPORTS_PER_SOL} SOL<br>
             <strong>Members (${vaultAccount.members.length}):</strong><br>
             <ul>
                 ${vaultAccount.members.map((member, index) => 
                     `<li>${index + 1}. ${member.toString()}</li>`
                 ).join('')}
             </ul>
-            <strong>Your Permissions:</strong><br>
-            - Owner: ${vaultAccount.owner.toString() === wallet.publicKey.toString() ? '✓ YES' : '✗ NO'}<br>
-            - Member: ${vaultAccount.members.some(m => m.toString() === wallet.publicKey.toString()) ? '✓ YES' : '✗ NO'}<br>
-            - Can Withdraw: ${(vaultAccount.owner.toString() === wallet.publicKey.toString() || 
-                              vaultAccount.members.some(m => m.toString() === wallet.publicKey.toString())) ? '✓ YES' : '✗ NO'}
         `;
         
         addLog('Vault info fetched successfully');
         
     } catch (error) {
         showError('Failed to get vault info: ' + error.message);
+    }
+}
+
+// Simulate get vault info
+async function simulateGetVaultInfo() {
+    try {
+        if (!program || !vaultPda) {
+            throw new Error('Wallet not connected or vault not found');
+        }
+
+        addLog('Simulating getVaultInfo...');
+        
+        const transaction = await program.methods.getVaultInfo()
+            .accounts({ vault: vaultPda })
+            .transaction();
+
+        const simulation = await program.provider.connection.simulateTransaction(transaction);
+        
+        if (simulation.value.err) {
+            throw new Error('Simulation failed: ' + JSON.stringify(simulation.value.err));
+        }
+
+        // Display logs from simulation
+        simulation.value.logs.forEach(log => {
+            if (log.includes('Vault Owner:') || log.includes('Members count:') || log.includes('Member ')) {
+                addLog(log);
+            }
+        });
+        
+    } catch (error) {
+        showError('Simulation failed: ' + error.message);
     }
 }
 
@@ -252,7 +231,7 @@ async function initializeVault() {
             throw new Error('Wallet not connected');
         }
 
-        addLog('Initializing vault at: ' + vaultPda.toString());
+        addLog('Initializing vault...');
         
         const tx = await program.methods.initializeVault(initMembers)
             .accounts({
@@ -262,14 +241,12 @@ async function initializeVault() {
             })
             .rpc();
 
-        addLog('✓ Vault initialized successfully!');
-        addLog('Transaction: ' + tx);
-        showSuccess('Vault initialized at: ' + vaultPda.toString());
+        addLog('Vault initialized successfully! Transaction: ' + tx);
+        showSuccess('Vault initialized!');
         
-        // Clear init members and disable init button
+        // Clear init members
         initMembers = [];
         document.getElementById('initMembers').innerHTML = '';
-        document.getElementById('initBtn').disabled = true;
         
     } catch (error) {
         showError('Failed to initialize vault: ' + error.message);
@@ -301,6 +278,94 @@ function addMemberToInit() {
     }
 }
 
+// Add member to vault
+async function addMember() {
+    try {
+        if (!program || !vaultPda) {
+            throw new Error('Wallet not connected or vault not found');
+        }
+
+        const newMemberInput = document.getElementById('newMember');
+        const newMemberPubkey = new solanaWeb3.PublicKey(newMemberInput.value.trim());
+        
+        addLog('Adding member: ' + newMemberPubkey.toString());
+        
+        const tx = await program.methods.addMember(newMemberPubkey)
+            .accounts({
+                vault: vaultPda,
+                signer: wallet.publicKey
+            })
+            .rpc();
+
+        addLog('Member added successfully! Transaction: ' + tx);
+        showSuccess('Member added!');
+        newMemberInput.value = '';
+        
+    } catch (error) {
+        showError('Failed to add member: ' + error.message);
+    }
+}
+
+// Remove member from vault
+async function removeMember() {
+    try {
+        if (!program || !vaultPda) {
+            throw new Error('Wallet not connected or vault not found');
+        }
+
+        const removeMemberInput = document.getElementById('removeMember');
+        const memberPubkey = new solanaWeb3.PublicKey(removeMemberInput.value.trim());
+        
+        addLog('Removing member: ' + memberPubkey.toString());
+        
+        const tx = await program.methods.removeMember(memberPubkey)
+            .accounts({
+                vault: vaultPda,
+                signer: wallet.publicKey
+            })
+            .rpc();
+
+        addLog('Member removed successfully! Transaction: ' + tx);
+        showSuccess('Member removed!');
+        removeMemberInput.value = '';
+        
+    } catch (error) {
+        showError('Failed to remove member: ' + error.message);
+    }
+}
+
+// Withdraw SOL
+async function withdrawSol() {
+    try {
+        if (!program || !vaultPda) {
+            throw new Error('Wallet not connected or vault not found');
+        }
+
+        const recipientInput = document.getElementById('recipient');
+        const amountInput = document.getElementById('amount');
+        
+        const recipient = new solanaWeb3.PublicKey(recipientInput.value.trim());
+        const amount = new anchor.BN(amountInput.value);
+        
+        addLog(`Withdrawing ${amount} lamports to: ${recipient.toString()}`);
+        
+        const tx = await program.methods.withdrawSol(amount)
+            .accounts({
+                vault: vaultPda,
+                recipient: recipient,
+                signer: wallet.publicKey,
+                systemProgram: solanaWeb3.SystemProgram.programId
+            })
+            .rpc();
+
+        addLog('SOL withdrawn successfully! Transaction: ' + tx);
+        showSuccess('SOL withdrawn!');
+        
+    } catch (error) {
+        showError('Failed to withdraw SOL: ' + error.message);
+    }
+}
+
 // Utility functions
 function addLog(message) {
     const logsDiv = document.getElementById('logs');
@@ -315,6 +380,7 @@ function clearLogs() {
 
 function showError(message) {
     addLog('ERROR: ' + message);
+    // You could also show a temporary error message in the UI
     const errorDiv = document.createElement('div');
     errorDiv.className = 'error';
     errorDiv.textContent = message;
@@ -330,47 +396,9 @@ function showSuccess(message) {
     setTimeout(() => successDiv.remove(), 3000);
 }
 
-// Check if libraries are loaded
-window.addEventListener('load', function() {
-    addLog('Page loaded - checking dependencies...');
-    
-    if (typeof solanaWeb3 === 'undefined') {
-        showError('Solana Web3.js not loaded!');
-        return;
-    }
-    
-    if (typeof anchor === 'undefined') {
-        showError('Anchor library not loaded!');
-        return;
-    }
-    
-    addLog('✓ All libraries loaded successfully');
-    
-    // Auto-connect if wallet was previously connected
+// Auto-connect if wallet was previously connected
+window.addEventListener('load', async () => {
     if (window.solana && window.solana.isConnected) {
-        addLog('Auto-connecting to wallet...');
-        connectWallet();
+        await connectWallet();
     }
 });
-
-// For now, comment out the functions that might cause issues
-// We'll implement them step by step once basic connection works
-
-/*
-// These functions will be implemented after basic connection is working
-async function addMember() {
-    addLog('Add member function not yet implemented');
-}
-
-async function removeMember() {
-    addLog('Remove member function not yet implemented');
-}
-
-async function withdrawSol() {
-    addLog('Withdraw SOL function not yet implemented');
-}
-
-async function simulateGetVaultInfo() {
-    addLog('Simulate get vault info function not yet implemented');
-}
-*/
