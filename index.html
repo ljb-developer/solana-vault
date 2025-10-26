@@ -97,6 +97,11 @@
 
   <!-- Only web3.js (no Anchor) -->
   <script src="https://unpkg.com/@solana/web3.js@1.95.1/lib/index.iife.min.js"></script>
+  <!-- Polyfill Buffer for browser -->
+<script src="https://unpkg.com/buffer@6.0.3/index.js"></script>
+<script>
+  window.Buffer = buffer.Buffer;
+</script>
   <script src="./main.js" defer></script>
 </body>
 </html>
