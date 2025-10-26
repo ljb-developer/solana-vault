@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solana Vault Manager</title>
-    <!-- Add Anchor library BEFORE your vault.js -->
-    <script src="https://unpkg.com/@coral-xyz/anchor@0.28.0/dist/browser/index.iife.min.js"></script>
-    <script src="https://unpkg.com/@solana/web3.js@1.87.6/lib/index.iife.js"></script>
-    <script src="https://unpkg.com/@solana/wallet-adapter-phantom/lib/index.iife.js"></script>
+    <!-- Load libraries in correct order -->
+    <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1.87.6/lib/index.iife.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@solana/wallet-adapter-wallets@0.19.32/lib/index.iife.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@coral-xyz/anchor@0.28.0/dist/cjs/anchor.cjs.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -81,12 +81,6 @@
             border: 1px solid #ddd;
             border-radius: 4px;
             width: 300px;
-        }
-        .section {
-            margin: 20px 0;
-            padding: 15px;
-            border: 1px solid #dee2e6;
-            border-radius: 5px;
         }
     </style>
 </head>
